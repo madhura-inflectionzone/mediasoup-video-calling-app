@@ -1,10 +1,11 @@
-const socket = io('https://b7b8-2401-4900-5301-7cda-359b-8ae0-151d-f801.ngrok-free.app/');
+const socket = io('http://localhost:3100/');
 const localVideo = document.getElementById('local-video');
 const remoteVideosContainer = document.getElementById('remote-videos');
 
+let device;
 let localStream;
 let sendTransport; 
-let remoteClients = {}; // Store remote client video elements
+let remoteClients = {}; 
 
 // Get user media
 async function getUserMedia() {
@@ -17,17 +18,86 @@ async function getUserMedia() {
     }
 }
 
-// Create device for Mediasoup
-async function createDevice() {
+async function fetchRtpCapabilities() {
     try {
-        const { rtpCapabilities } = await fetch('/api/rtp-capabilities').then(res => res.json());
-        device = new mediasoupClient.Device();
-        await device.load({ routerRtpCapabilities: rtpCapabilities });
-        console.log('Device created and RTP capabilities loaded:', device);
+        const response = await fetch('http://localhost:3100/rtp-capabilities'); // Ensure this matches your server's route
+        console.log('Response status:', response.status);
+        const data = await response.json();
+        console.log('Response data:', data);
+
+        if (!response.ok) {
+            throw new Error(`Error fetching RTP Capabilities: ${data.error || response.statusText}`);
+        }
+        return data.rtpCapabilities; // Assuming your server returns { rtpCapabilities: ... }
     } catch (error) {
-        console.error('Error creating device:', error);
+        console.error('Error fetching RTP Capabilities:', error);
+        throw error;
     }
 }
+async function createDevice() {
+    try {
+        console.log('Creating Mediasoup device...');
+        device = new mediasoupClient.Device();
+
+        const rtpCapabilities = await fetchRtpCapabilities(); // Call the fetch function
+        console.log('RTP Capabilities received:', rtpCapabilities);
+
+        await device.load({ routerRtpCapabilities: rtpCapabilities });
+        console.log('Device created and loaded successfully.');
+    } catch (error) {
+        console.error('Error creating and loading device:', error);
+        alert('Failed to initialize device. Please check your connection and try again.');
+        throw error;
+    }
+}
+
+// async function createDevice() {
+//     try {
+//         console.log('Creating Mediasoup device...');
+//         device = new mediasoupClient.Device();
+
+//         // Request RTP capabilities from the server
+//         const rtpCapabilities = await new Promise((resolve, reject) => {
+//             socket.emit('getRtpCapabilities', (data) => {
+//                 if (data.error) {
+//                     reject(new Error('Error fetching RTP Capabilities: ' + data.error));
+//                 } else {
+//                     resolve(data.rtpCapabilities);
+//                 }
+//             });
+//         });
+
+//         console.log('RTP Capabilities received:', rtpCapabilities);
+
+//         // Load the device with the router RTP capabilities received from the server
+//         await device.load({ routerRtpCapabilities: rtpCapabilities });
+//         console.log('Device created and loaded successfully.');
+//     } catch (error) {
+//         console.error('Error creating and loading device:', error);
+//         alert('Failed to initialize device. Please check your connection and try again.');
+//         throw error;
+//     }
+// }
+
+
+socket.emit('getRtpCapabilities');
+
+// socket.on('rtpCapabilities', (capabilities) => {
+//     const device = new Device(); // Assuming Device is properly imported
+//     device.load(capabilities)
+//         .then(() => {
+//             console.log('Device loaded successfully');
+//         })
+//         .catch((error) => {
+//             console.error('Error loading device:', error);
+//         });
+// });
+
+socket.on('rtpCapabilities', (rtpCapabilities) => {
+    console.log('Received RTP Capabilities:', rtpCapabilities);
+    createDevice();
+});
+
 
 // Socket event for transport creation
 socket.on('transport-created', async (data) => {
@@ -62,6 +132,33 @@ socket.on('new-peer', (peerId) => {
     remoteVideosContainer.appendChild(remoteVideo);
     remoteClients[peerId] = remoteVideo; // Store the remote video element
 });
+
+// Handle receiving new consumers
+socket.on('new-consumer', async ({ producerId, consumerId, kind, rtpParameters, transportId }) => {
+    const remoteVideo = remoteClients[socketId];
+
+    // Create a new consumer transport for receiving the producer's track
+    const consumerTransport = device.createRecvTransport({ /* Transport parameters here */ });
+
+    consumerTransport.on('connect', async ({ dtlsParameters }, callback) => {
+        socket.emit('connect-transport', { transportId: consumerTransport.id, dtlsParameters });
+        callback();
+    });
+
+    const consumer = await consumerTransport.consume({ id: producerId, rtpParameters });
+t
+    if (remoteVideo) {
+        const remoteStream = new MediaStream([consumer.track]);
+        remoteVideo.srcObject = remoteStream;
+    }
+
+    consumer.on('trackended', () => {
+        console.log('Consumer track ended:', consumerId);
+        remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+        remoteVideo.srcObject = null; // Clear the video element
+    });
+});
+
 
 // Handle receiving remote tracks
 socket.on('new-producer', async ({ producerId, socketId }) => {

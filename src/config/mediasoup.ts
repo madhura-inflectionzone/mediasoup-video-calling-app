@@ -1,8 +1,12 @@
 import * as mediasoup from 'mediasoup';
-import { Router } from 'mediasoup/node/lib/types';
+import { Router, Worker } from 'mediasoup/node/lib/types';
 
-let worker: mediasoup.types.Worker;
+// Define Worker and Router
+let worker: Worker;
 let router: Router;
+
+// Define rtpCapabilities type based on the Router instance
+export let rtpCapabilities: mediasoup.types.RtpCapabilities;
 
 export async function initMediasoup() {
   try {
@@ -32,6 +36,9 @@ export async function initMediasoup() {
         }
       ]
     });
+
+    // Set the rtpCapabilities based on the created router
+    rtpCapabilities = router.rtpCapabilities;
 
     console.log('Mediasoup router created successfully');
   } catch (error) {
