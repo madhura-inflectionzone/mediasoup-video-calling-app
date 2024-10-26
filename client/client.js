@@ -34,6 +34,7 @@ async function fetchRtpCapabilities() {
         throw error;
     }
 }
+
 async function createDevice() {
     try {
         console.log('Creating Mediasoup device...');
@@ -41,6 +42,11 @@ async function createDevice() {
 
         const rtpCapabilities = await fetchRtpCapabilities(); // Call the fetch function
         console.log('RTP Capabilities received:', rtpCapabilities);
+
+        // Check if RTP capabilities are valid
+        if (!rtpCapabilities || !rtpCapabilities.codecs || rtpCapabilities.codecs.length === 0) {
+            throw new Error('Invalid RTP Capabilities received');
+        }
 
         await device.load({ routerRtpCapabilities: rtpCapabilities });
         console.log('Device created and loaded successfully.');
@@ -51,53 +57,11 @@ async function createDevice() {
     }
 }
 
-// async function createDevice() {
-//     try {
-//         console.log('Creating Mediasoup device...');
-//         device = new mediasoupClient.Device();
 
-//         // Request RTP capabilities from the server
-//         const rtpCapabilities = await new Promise((resolve, reject) => {
-//             socket.emit('getRtpCapabilities', (data) => {
-//                 if (data.error) {
-//                     reject(new Error('Error fetching RTP Capabilities: ' + data.error));
-//                 } else {
-//                     resolve(data.rtpCapabilities);
-//                 }
-//             });
-//         });
-
-//         console.log('RTP Capabilities received:', rtpCapabilities);
-
-//         // Load the device with the router RTP capabilities received from the server
-//         await device.load({ routerRtpCapabilities: rtpCapabilities });
-//         console.log('Device created and loaded successfully.');
-//     } catch (error) {
-//         console.error('Error creating and loading device:', error);
-//         alert('Failed to initialize device. Please check your connection and try again.');
-//         throw error;
-//     }
-// }
-
-
-socket.emit('getRtpCapabilities');
-
-// socket.on('rtpCapabilities', (capabilities) => {
-//     const device = new Device(); // Assuming Device is properly imported
-//     device.load(capabilities)
-//         .then(() => {
-//             console.log('Device loaded successfully');
-//         })
-//         .catch((error) => {
-//             console.error('Error loading device:', error);
-//         });
-// });
-
-socket.on('rtpCapabilities', (rtpCapabilities) => {
+socket.on('rtpCapabilities', async (rtpCapabilities) => {
     console.log('Received RTP Capabilities:', rtpCapabilities);
-    createDevice();
+    await createDevice();
 });
-
 
 // Socket event for transport creation
 socket.on('transport-created', async (data) => {
@@ -134,7 +98,7 @@ socket.on('new-peer', (peerId) => {
 });
 
 // Handle receiving new consumers
-socket.on('new-consumer', async ({ producerId, consumerId, kind, rtpParameters, transportId }) => {
+socket.on('new-consumer', async ({ producerId, consumerId, kind, rtpParameters, transportId, socketId }) => {
     const remoteVideo = remoteClients[socketId];
 
     // Create a new consumer transport for receiving the producer's track
@@ -146,7 +110,7 @@ socket.on('new-consumer', async ({ producerId, consumerId, kind, rtpParameters, 
     });
 
     const consumer = await consumerTransport.consume({ id: producerId, rtpParameters });
-t
+
     if (remoteVideo) {
         const remoteStream = new MediaStream([consumer.track]);
         remoteVideo.srcObject = remoteStream;
@@ -159,13 +123,12 @@ t
     });
 });
 
-
 // Handle receiving remote tracks
 socket.on('new-producer', async ({ producerId, socketId }) => {
     const remoteVideo = remoteClients[socketId];
 
     // Create a new consumer for the producer
-    const consumerTransport = device.createRecvTransport(/* Transport parameters here */);
+    const consumerTransport = device.createRecvTransport({ /* Transport parameters here */ });
 
     consumerTransport.on('connect', async ({ dtlsParameters }, callback) => {
         socket.emit('connect-transport', { transportId: consumerTransport.id, dtlsParameters });

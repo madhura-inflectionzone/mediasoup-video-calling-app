@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import http from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
-import mediasoupRouter from './api/mediasoup/router'; // Adjusted import
+import mediasoupRouter from './api/mediasoup/router'; 
 import { initMediasoup, router, rtpCapabilities } from './config/mediasoup';
 import { Server as SocketIOServer } from 'socket.io';
 import { connectTransport, createConsumerTransport, createTransport } from './services/mediasoup.service';
@@ -26,6 +26,10 @@ app.use(express.static(path.join(__dirname, '../client')));
 
 app.get('/', (_, res: Response) => {
     res.sendFile(path.join(__dirname, '../client', 'index.html'));
+});
+
+app.get('/favicon.ico', (_, res: Response) => {
+     res.status(204); // Respond with no content
 });
 
 // Use the router for API routes
@@ -58,23 +62,9 @@ io.on('connection', (socket) => {
 
     io.emit('new-peer', socket.id); 
 
-    // socket.on('getRtpCapabilities', (callback) => {
-    //     if (router) {
-    //         const rtpCapabilities = router.rtpCapabilities;
-    //         if (callback && typeof callback === 'function') {
-    //             callback({ rtpCapabilities });
-    //         } else {
-    //             console.error('No valid callback provided for RTP capabilities.');
-    //         }
-    //     } else {
-    //         console.error('Router not initialized.');
-    //     }
-    // });
-
     socket.on('getRtpCapabilities', (callback) => {
         const rtpCapabilities = router.rtpCapabilities;
         console.log('Sending RTP Capabilities:', rtpCapabilities);
-        callback({ rtpCapabilities });
     });
 
     socket.on('create-transport', async () => {
@@ -193,7 +183,6 @@ io.on('connection', (socket) => {
         }
     }
     
-    // Example usage of the consume function when needed (e.g., after producing)
     socket.on('create-consumer', async ({ producerId }) => {
         try {
             const consumerData = await consume(socket.id, producerId);
